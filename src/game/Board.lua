@@ -6,6 +6,7 @@ local Gem = require "src.game.Gem"
 local Cursor = require "src.game.Cursor"
 local Explosion = require "src.game.Explosion"
 local Sounds = require "src.game.SoundEffects"
+local Coin = require "src.game.Coin"
 
 local Board = Class{}
 Board.MAXROWS = 8
@@ -18,9 +19,16 @@ function Board:init(x,y, stats)
     self.cursor = Cursor(self.x,self.y,Board.TILESIZE+1)
 
     self.tiles = Matrix:new(Board.MAXROWS,Board.MAXCOLS)
+    local coinI = math.random(1,8)
+    local coinJ = math.random(1,8)
     for i=1, Board.MAXROWS do
         for j=1, Board.MAXCOLS do
-            self.tiles[i][j] = self:createGem(i,j)
+            if i == coinI and j == coinJ then
+                self.coin = Coin(self.x+(j-1)*Board.TILESIZE,self.y+(i-1)*Board.TILESIZE)
+                self.tiles[i][j] = self.coin
+            else
+                self.tiles[i][j] = self:createGem(i,j)
+            end
         end -- end for j
     end -- end for i
     self:fixInitialMatrix()
@@ -29,6 +37,8 @@ function Board:init(x,y, stats)
     self.tweenGem2 = nil
     self.explosions = {}
     self.arrayFallTweens = {}
+    self.level = 1
+    self.newCoin = false
 end
 
 function Board:createGem(row,col)
@@ -177,6 +187,7 @@ function Board:convertPixelToMatrix(x,y)
 end
 
 function Board:tweenStartSwap(row1,col1,row2,col2)
+    stats:comboReset()
     local x1 = self.tiles[row1][col1].x
     local y1 = self.tiles[row1][col1].y
 
@@ -242,19 +253,61 @@ function Board:matches()
     local score = 0
 
     if #horMatches > 0 or #verMatches > 0 then -- if there are matches
+        local crow, ccol = nil
+        for i=1, Board.MAXROWS do   -- find the coin on the board
+            for j=1, Board.MAXCOLS do
+                -- if it is the coin set crow and ccol
+                if self.tiles[i][j] == self.coin then
+                    crow = i
+                    ccol = j
+                    break
+                end
+            end -- end for j
+
+            if crow then -- break if found
+                break
+            end
+        end -- end for i
+
         for k, match in pairs(horMatches) do
             score = score + 2^match.size * 10   
             for j=0, match.size-1 do
-                self.tiles[match.row][match.col+j] = nil
                 self:createExplosion(match.row,match.col+j)
+                self.tiles[match.row][match.col+j] = nil
+
+                -- Check if it is next to coin
+                if crow and ccol then
+                    local rowDiff = math.abs(crow - match.row)
+                    local colDiff = math.abs(ccol - (match.col+j))
+                    if rowDiff == 1 and colDiff == 0 or rowDiff == 0 and colDiff == 1 then
+                        print("YES")
+                        self.coin:scored()
+                        self.tiles[crow][ccol] = nil
+                        stats:coinPoints()
+                        self.newCoin = true
+                    end
+                end
             end -- end for j 
         end -- end for each horMatch
 
         for k, match in pairs(verMatches) do
             score = score + 2^match.size * 10   
             for i=0, match.size-1 do
-                self.tiles[match.row+i][match.col] = nil
                 self:createExplosion(match.row+i,match.col)
+                self.tiles[match.row+i][match.col] = nil
+
+                -- Check if it is next to coin
+                if crow and ccol then
+                    local rowDiff = math.abs(crow - (match.row+i))
+                    local colDiff = math.abs(ccol - match.col)
+                    if rowDiff == 1 and colDiff == 0 or rowDiff == 0 and colDiff == 1 then
+                        print("YES")
+                        self.coin:scored()
+                        self.tiles[crow][ccol] = nil
+                        stats:coinPoints()
+                        self.newCoin = true
+                    end
+                end
             end -- end for i 
         end -- end for each verMatch
 
@@ -263,18 +316,34 @@ function Board:matches()
         end
         Sounds["breakGems"]:play()
 
+        stats:comboUp()
         self.stats:addScore(score)
 
         self:shiftGems()
         self:generateNewGems()
+
+        -- add a new coin randomly (shouldve prob generated a new one like the other gems, but
+            -- didn't come up with a good idea)
+        if stats.level > self.level and self.coin.x == nil then
+            self.level = stats.level
+            local newI = math.random(1,8)
+            local newJ = math.random(1,8)
+            self.coin:newLocation(self.x+(newJ-1)*Board.TILESIZE,self.y+(newI-1)*Board.TILESIZE)
+            self.tiles[newI][newJ] = self.coin
+        end
     end -- end if (has matches)
 end
 
 function Board:createExplosion(row,col)
     local exp = Explosion()
-    exp:trigger(self.x+(col-1)*Board.TILESIZE+Board.TILESIZE/2,
-               self.y+(row-1)*Board.TILESIZE+Board.TILESIZE/2)  
-    table.insert(self.explosions, exp) -- add exp to our array
+    local gem = self.tiles[row][col]
+    if gem then
+        local r, g, b = gem:color()
+        exp:setColor(r, g, b)
+        exp:trigger(self.x+(col-1)*Board.TILESIZE+Board.TILESIZE/2,
+                self.y+(row-1)*Board.TILESIZE+Board.TILESIZE/2)  
+        table.insert(self.explosions, exp) -- add exp to our array
+    end
 end
 
 function Board:shiftGems() 

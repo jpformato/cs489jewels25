@@ -1,3 +1,5 @@
+-- Jack Formato
+
 local Globals = require "src.Globals"
 local Push = require "libs.push"
 local Background = require "src.game.Background"
@@ -41,6 +43,11 @@ function love.keypressed(key)
     elseif key == "F2" or key == "tab" then
         debugFlag = not debugFlag
     elseif key == "return" and gameState=="start" then
+        Sounds['playStateMusic']:play()
+        gameState = "play"
+    elseif key == "return" and gameState == "over" then
+        stats:reset()
+        Sounds['playStateMusic']:play()
         gameState = "play"
     end
 end
@@ -61,6 +68,11 @@ end
 
 -- Update is executed each frame, dt is delta time (a fraction of a sec)
 function love.update(dt)
+    if stats.timeOut and gameState ~= "over" then
+        gameState = "over"
+        Sounds['timeOut']:play()
+    end
+
     bg1:update(dt)
     bg2:update(dt)
     testexp:update(dt)
@@ -74,6 +86,7 @@ function love.update(dt)
         board:update(dt)
 
     elseif gameState == "over" then
+        Sounds['playStateMusic']:pause()
         -- for later, if we needed
     end
 end
@@ -129,4 +142,6 @@ function drawGameOverState()
         gameWidth,"center")
     love.graphics.printf("Press Enter to Play or Escape to exit",
         0,90, gameWidth,"center")
+    love.graphics.printf("Level: "..stats.level, 0, 130, gameWidth, "center")
+    love.graphics.printf("Score: "..stats.totalScore, 0, 170, gameWidth, "center")
 end
